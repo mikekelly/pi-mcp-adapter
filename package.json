@@ -1,7 +1,7 @@
 {
-  "name": "pi-mcp-adapter",
-  "version": "5.0.0",
-  "description": "MCP (Model Context Protocol) adapter extension for Pi coding agent",
+  "name": "@realmikekelly/pi-mcp-adapter",
+  "version": "5.0.1",
+  "description": "Fork of pi-mcp-adapter with a shared-connection hook for companion extensions",
   "type": "module",
   "types": "./index.ts",
   "exports": {
@@ -59,7 +59,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nicobailon/pi-mcp-adapter.git"
+    "url": "git+https://github.com/mikekelly/pi-mcp-adapter.git"
   },
   "keywords": [
     "pi-package",
@@ -87,6 +87,7 @@
     "utils.ts",
     "abort.ts",
     "runtime-owner.ts",
+    "runtime-connection.ts",
     "tool-metadata.ts",
     "ts-shape.ts",
     "output-shape.ts",
@@ -221,5 +222,12 @@
     "typebox": "1.3.27",
     "typescript": "5.9.3",
     "vitest": "^3.0.0"
+  },
+  "homepage": "https://github.com/mikekelly/pi-mcp-adapter#readme",
+  "bugs": {
+    "url": "https://github.com/mikekelly/pi-mcp-adapter/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
