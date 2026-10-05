@@ -65,3 +65,67 @@ describe("protocol operations on real stdio transports", () => {
     }
   });
 });
+
+for (const protocolVersion of ["legacy", "2026-07-28"] as const) {
+  it(`uses the SDK request envelope on real ${protocolVersion} streams`, async () => {
+    const manager = new McpServerManager(process.cwd());
+    const owner = new AbortController();
+    manager.setSamplingConfig({
+      autoApprove: true,
+      modelRegistry: {} as any,
+      getCurrentModel: () => undefined,
+      getSignal: () => undefined,
+    });
+    manager.setElicitationConfig({ allowUrl: true, ui: {} as any });
+    try {
+      const connection = await manager.connect("envelope-test", {
+        command: process.execPath,
+        args: [
+          fileURLToPath(
+            new URL("./fixtures/protocol-envelope-server.mjs", import.meta.url),
+          ),
+        ],
+        protocolVersion,
+      });
+      const session = createProtocolSession(connection, owner.signal, {
+        namespace: "demo",
+        requests: ["demo/list"],
+        streams: ["demo/stream"],
+        notifications: ["notifications/demo/event"],
+      });
+      const ordinary = (await session.request("demo/list")) as { meta: any };
+      let received!: (value: unknown) => void;
+      const notification = new Promise((resolve) => {
+        received = resolve;
+      });
+      const stream = session.openStream("demo/stream", {}, (_method, params) =>
+        received(params.meta),
+      );
+      await stream.sent;
+      const streamMeta = await notification;
+      expect(streamMeta).toEqual(ordinary.meta);
+      if (protocolVersion === "2026-07-28") {
+        expect(streamMeta).toMatchObject({
+          "io.modelcontextprotocol/protocolVersion": protocolVersion,
+          "io.modelcontextprotocol/clientInfo": {
+            name: "pi-mcp-envelope-test",
+            version: "1.0.0",
+          },
+          "io.modelcontextprotocol/clientCapabilities": {
+            sampling: {},
+            elicitation: { form: {}, url: {} },
+          },
+        });
+        expect(
+          ordinary.meta["io.modelcontextprotocol/clientCapabilities"]
+            .extensions,
+        ).toBeDefined();
+      } else expect(streamMeta).toBeNull();
+      await stream.cancel();
+      session.close();
+    } finally {
+      owner.abort();
+      await manager.closeAll();
+    }
+  });
+}

@@ -118,6 +118,14 @@ function appendStderrTail(tail, chunk) {
         ? Buffer.from(combined.subarray(combined.length - MAX_CAPTURED_STDERR_BYTES))
         : combined;
 }
+// Use the SDK's own envelope builder so extension streams match ordinary requests,
+// including capability changes and negotiated protocol versions.
+class AdapterClient extends Client {
+    requestMetadata() {
+        return this._outboundMetaEnvelope();
+    }
+}
+const clientMetadata = new WeakMap();
 const KEEP_ALIVE_REFRESH_TIMEOUT_MS = 5_000;
 const LISTEN_RETRY_DELAY_MS = 5_000;
 const RECENT_RESOURCE_TTL_MS = 10 * 60_000;
@@ -959,6 +967,7 @@ export class McpServerManager {
             const connection = {
                 client,
                 transport,
+                requestMetadata: () => clientMetadata.get(client)?.(),
                 definition,
                 tools: [],
                 toolsRevision: 0,
@@ -1174,7 +1183,7 @@ export class McpServerManager {
         const capabilities = this.buildClientCapabilities();
         const versionNegotiation = resolveVersionNegotiation(definition);
         let client;
-        client = new Client({ name: `pi-mcp-${serverName}`, version: "1.0.0" }, {
+        client = new AdapterClient({ name: `pi-mcp-${serverName}`, version: "1.0.0" }, {
             jsonSchemaValidator: createJsonSchemaValidator(),
             ...(versionNegotiation ? { versionNegotiation } : {}),
             ...(Object.keys(capabilities).length > 0 ? { capabilities } : {}),
@@ -1196,6 +1205,7 @@ export class McpServerManager {
                 },
             },
         });
+        clientMetadata.set(client, () => client.requestMetadata());
         if (this.samplingConfig) {
             registerSamplingHandler(client, { ...this.samplingConfig, serverName });
         }

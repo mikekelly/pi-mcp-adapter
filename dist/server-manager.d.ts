@@ -10,6 +10,8 @@ export declare function isUnauthorizedHttpError(error: unknown): boolean;
 export interface ServerConnection {
     client: Client;
     transport: Transport;
+    /** Internal SDK envelope accessor; never exposed through the protocol extension API. */
+    requestMetadata?: () => Readonly<Record<string, unknown>> | undefined;
     definition: ServerDefinition;
     tools: McpTool[];
     /** Cache hints from the server's aggregated tools/list result. */
