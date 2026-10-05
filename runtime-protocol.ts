@@ -213,7 +213,8 @@ function routerFor(connection: ServerConnection): Router {
       (raw.params === undefined || record(raw.params))
     ) {
       for (const watcher of [...router.watchers]) {
-        if (!watcher.methods.has(raw.method)) continue;
+        if (!router.watchers.has(watcher) || !watcher.methods.has(raw.method))
+          continue;
         try {
           void Promise.resolve(
             watcher.notify(raw.method, structuredClone(raw.params ?? {})),

@@ -375,3 +375,44 @@ it("copies observer declarations and payloads and does not broadcast stream traf
   watch.close();
   session.close();
 });
+
+it.each(["observer", "session", "owner"])(
+  "does not deliver to observers closed during dispatch by %s cleanup",
+  async (cleanup) => {
+    const f = fixture(),
+      previous = f.transport.onmessage,
+      session = f.session(),
+      received = vi.fn();
+    let closeLater!: () => void;
+    const first = session.watchNotifications(
+      ["notifications/demo/event"],
+      () => {
+        if (cleanup === "observer") closeLater();
+        else if (cleanup === "session") session.close();
+        else f.owner.abort();
+      },
+    );
+    const later = session.watchNotifications(
+      ["notifications/demo/event"],
+      received,
+    );
+    closeLater = () => later.close();
+    const frame = {
+      jsonrpc: "2.0",
+      method: "notifications/demo/event",
+      params: {},
+    };
+    f.transport.onmessage(frame);
+    expect(received).not.toHaveBeenCalled();
+    expect(previous).toHaveBeenCalledWith(frame, undefined);
+    expect((await later.closed).reason).toBe(
+      cleanup === "owner" ? "disconnected" : "cancelled",
+    );
+    expect(f.connection.activeProtocolOperations).toBe(
+      cleanup === "observer" ? 1 : 0,
+    );
+    first.close();
+    session.close();
+    expect(f.connection.activeProtocolOperations).toBe(0);
+  },
+);
