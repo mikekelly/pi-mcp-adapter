@@ -2,6 +2,8 @@
 
 For extension authors, plugin authors, and apps that embed Pi: loading servers from plugins and packages, registering or calling servers at runtime, SDK configuration, host-managed embedding, and status events.
 
+For protocol capabilities beyond tool calls, trusted extensions can [lease the adapter’s existing connection](connection-leases.md). Leases preserve adapter configuration, authentication and session ownership without starting a second server.
+
 ## Agent Plugins
 
 The adapter can load MCP servers from [Agent Plugins](https://agent-plugins.org/) packages when you list plugin directories in `settings.agentPluginPaths`:

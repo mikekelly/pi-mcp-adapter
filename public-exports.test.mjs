@@ -183,3 +183,18 @@ test("System One key CLI loads built secure-store modules from the packed packag
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+test("packed root export exposes the connection lease API to Pi extension loaders", async () => {
+  const fixtureRoot = await mkdtemp(path.join(tmpdir(), "pi-mcp-connection-export-"));
+  try {
+    await extractPackedPackage(fixtureRoot);
+    const result = spawnSync(process.execPath, [
+      "--import", import.meta.resolve("tsx"),
+      "--input-type=module", "--eval",
+      'const api = await import("pi-mcp-adapter"); if (typeof api.acquireMcpConnection !== "function" || api.MCP_CONNECTION_EVENT !== "pi-mcp-adapter:connection:v1") process.exit(2);',
+    ], { cwd: fixtureRoot, encoding: "utf8", timeout: 15000 });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});

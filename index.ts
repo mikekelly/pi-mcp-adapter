@@ -1,3 +1,5 @@
+import { registerConnectionBridge, leaseConnection } from "./runtime-connection.ts";
+export { acquireMcpConnection, MCP_CONNECTION_EVENT, type McpConnectionLease } from "./runtime-connection.ts";
 import { withFileMutationQueue, type AgentToolResult, type AgentToolUpdateCallback, type ExtensionAPI, type ExtensionContext, type RegisteredMcpServer, type ToolInfo } from "@earendil-works/pi-coding-agent";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
@@ -990,6 +992,26 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
         return { ok: false, error: error instanceof Error ? error : new Error(String(error)) };
       }
     })();
+  });
+
+  registerConnectionBridge(pi, async name => {
+    if (!sessionCtx) throw new Error("MCP connections require an active Pi session");
+    const target = await ensureSessionRuntime(sessionCtx);
+    if (!target) throw new Error("MCP is not initialized");
+    const guard = captureRuntimeGuard(target);
+    const definition = target.config.mcpServers[name];
+    if (!Object.hasOwn(target.config.mcpServers, name) || !definition || isServerDisabled(definition)) {
+      throw new Error("MCP server is not configured or enabled");
+    }
+    const core = await loadForRuntime(loadCoreRuntime, guard);
+    if (!await core.lazyConnect(target, name, target.owner.signal)) throw new Error("MCP server could not connect; check /mcp-adapter");
+    assertRuntimeGuard(guard);
+    if (target.config.mcpServers[name] !== definition || isServerDisabled(definition)) {
+      throw new Error("MCP server configuration changed while connecting");
+    }
+    const connection = target.manager.getConnection(name);
+    if (!connection || connection.status !== "connected") throw new Error("MCP connection is unavailable");
+    return leaseConnection(connection, target.owner.signal);
   });
 
   // Compares registrations with the active session's config, so it runs only once state exists.
