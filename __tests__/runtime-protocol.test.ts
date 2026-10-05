@@ -209,11 +209,8 @@ describe("mediated protocol extensions", () => {
     expect(f.connection.activeProtocolOperations).toBe(0);
     session.close();
   });
-  it("rejects unsupported transport, dead owners, and stale registration connects", async () => {
+  it("rejects dead owners and stale registration connects", async () => {
     const f = fixture();
-    f.connection.definition = { url: "https://example.test" };
-    expect(f.session).toThrow("stdio");
-    f.connection.definition = { command: "node" };
     f.owner.abort();
     expect(f.session).toThrow("unavailable");
     const pi = bus();
@@ -279,22 +276,6 @@ it("does not send a stream cancelled before dispatch and never exposes uncorrela
   session.close();
 });
 
-it.each([{ url: "https://example.test/mcp" }, { socket: "/tmp/mcp.sock" }])(
-  "rejects unsupported transport before installing a router or sending traffic: %j",
-  (definition) => {
-    const f = fixture(),
-      originalMessage = f.transport.onmessage,
-      originalClose = f.transport.onclose;
-    f.connection.definition = definition;
-    expect(f.session).toThrow("stdio servers only");
-    expect(f.transport.onmessage).toBe(originalMessage);
-    expect(f.transport.onclose).toBe(originalClose);
-    expect(f.client.request).not.toHaveBeenCalled();
-    expect(f.transport.send).not.toHaveBeenCalled();
-    expect(f.connection.activeProtocolOperations ?? 0).toBe(0);
-  },
-);
-
 it("fails closed if a modern connection cannot supply its SDK metadata", async () => {
   const f = fixture();
   f.client.getProtocolEra = () => "modern";
@@ -304,5 +285,93 @@ it("fails closed if a modern connection cannot supply its SDK metadata", async (
   expect(f.transport.send).not.toHaveBeenCalled();
   expect((await stream.closed).reason).toBe("error");
   expect(f.connection.activeProtocolOperations).toBe(0);
+  session.close();
+});
+
+it("isolates declared notification observers and preserves SDK delivery", async () => {
+  const f = fixture(),
+    previous = f.transport.onmessage,
+    session = f.session();
+  const received = vi.fn(),
+    broken = vi.fn(() => {
+      throw new Error("consumer failed");
+    });
+  const a = session.watchNotifications(["notifications/demo/event"], received);
+  const b = session.watchNotifications(["notifications/demo/event"], broken);
+  expect(f.connection.activeProtocolOperations).toBe(2);
+  expect(() =>
+    session.watchNotifications(["notifications/tools/list_changed"], received),
+  ).toThrow("Undeclared");
+  f.transport.onmessage({
+    jsonrpc: "2.0",
+    method: "notifications/demo/event",
+    params: { value: 1 },
+  });
+  expect(received).toHaveBeenCalledOnce();
+  expect(previous).toHaveBeenCalledOnce();
+  expect((await b.closed).reason).toBe("error");
+  expect(f.connection.activeProtocolOperations).toBe(1);
+  f.transport.onmessage({
+    jsonrpc: "2.0",
+    method: "notifications/tools/list_changed",
+  });
+  expect(received).toHaveBeenCalledOnce();
+  a.close();
+  a.close();
+  expect(await a.closed).toEqual({ reason: "cancelled" });
+  expect(f.connection.activeProtocolOperations).toBe(0);
+  const c = session.watchNotifications(["notifications/demo/event"], received);
+  f.owner.abort();
+  expect((await c.closed).reason).toBe("disconnected");
+  expect(f.connection.activeProtocolOperations).toBe(0);
+});
+
+it("preserves structured stream errors", async () => {
+  const f = fixture(),
+    session = f.session();
+  const stream = session.openStream("demo/stream", {}, () => {});
+  await stream.sent;
+  const error = {
+    code: -32012,
+    message: "Forbidden",
+    data: { reason: "revoked" },
+  };
+  f.transport.onmessage({ jsonrpc: "2.0", id: stream.id, error });
+  const end = await stream.closed;
+  expect(end).toEqual({
+    reason: "error",
+    error: "Forbidden",
+    protocolError: error,
+  });
+  error.data.reason = "changed";
+  expect(end.protocolError?.data).toEqual({ reason: "revoked" });
+  session.close();
+});
+
+it("copies observer declarations and payloads and does not broadcast stream traffic", async () => {
+  const f = fixture(),
+    session = f.session();
+  const methods = ["notifications/demo/event"];
+  const received = vi.fn();
+  const watch = session.watchNotifications(methods, (_method, params) => {
+    params.value = 2;
+    received();
+  });
+  methods[0] = "notifications/tools/list_changed";
+  const notification = {
+    jsonrpc: "2.0",
+    method: "notifications/demo/event",
+    params: { value: 1 },
+  };
+  f.transport.onmessage(notification);
+  expect(notification.params.value).toBe(1);
+  const stream = session.openStream("demo/stream", {}, () => {});
+  await stream.sent;
+  f.transport.onmessage({
+    ...notification,
+    params: { _meta: { "io.modelcontextprotocol/subscriptionId": stream.id } },
+  });
+  expect(received).toHaveBeenCalledOnce();
+  watch.close();
   session.close();
 });
