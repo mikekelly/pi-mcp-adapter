@@ -14,6 +14,12 @@ export interface McpProtocolDefinition {
 export interface McpProtocolEnd {
   reason: "cancelled" | "ended" | "error" | "disconnected";
   error?: string;
+  /** Preserve JSON-RPC error details for capability-specific recovery decisions. */
+  protocolError?: { code: number; message: string; data?: unknown };
+}
+export interface McpProtocolWatch {
+  readonly closed: Promise<McpProtocolEnd>;
+  close(): void;
 }
 export interface McpProtocolStream {
   readonly id: string;
@@ -23,6 +29,11 @@ export interface McpProtocolStream {
 }
 export interface McpProtocolSession {
   readonly signal: AbortSignal;
+  /** Observe declared notifications outside this adapter's extension streams. */
+  watchNotifications(
+    methods: string[],
+    onNotification: (method: string, params: Record<string, unknown>) => void,
+  ): McpProtocolWatch;
   request(
     method: string,
     params?: Record<string, unknown>,
@@ -116,6 +127,7 @@ interface Router {
   entries: Map<string, Entry>;
   disconnect: Set<() => void>;
   closed: boolean;
+  watchers: Set<Entry>;
 }
 const routers = new WeakMap<Transport, Router>();
 function routerFor(connection: ServerConnection): Router {
@@ -128,6 +140,7 @@ function routerFor(connection: ServerConnection): Router {
     entries: new Map(),
     disconnect: new Set(),
     closed: false,
+    watchers: new Set(),
   };
   routers.set(transport, router);
   const previousMessage = transport.onmessage;
@@ -148,6 +161,9 @@ function routerFor(connection: ServerConnection): Router {
                 typeof raw.error?.message === "string"
                   ? raw.error.message
                   : "MCP stream error",
+              ...(typeof raw.error?.code === "number"
+                ? { protocolError: structuredClone(raw.error) }
+                : {}),
             }
           : { reason: "ended" },
       );
@@ -190,6 +206,31 @@ function routerFor(connection: ServerConnection): Router {
     // Ignore late replies/notifications belonging to this router, never unrelated traffic.
     if (!entry && typeof id === "string" && id.startsWith(router.prefix))
       return;
+    if (
+      !entry &&
+      !("id" in raw) &&
+      typeof raw.method === "string" &&
+      (raw.params === undefined || record(raw.params))
+    ) {
+      for (const watcher of [...router.watchers]) {
+        if (!watcher.methods.has(raw.method)) continue;
+        try {
+          void Promise.resolve(
+            watcher.notify(raw.method, structuredClone(raw.params ?? {})),
+          ).catch((error) =>
+            watcher.finish({
+              reason: "error",
+              error: `Protocol handler failed: ${message(error)}`,
+            }),
+          );
+        } catch (error) {
+          watcher.finish({
+            reason: "error",
+            error: `Protocol handler failed: ${message(error)}`,
+          });
+        }
+      }
+    }
     previousMessage?.(frame, extra);
   };
   transport.onclose = () => {
@@ -221,9 +262,6 @@ export function createProtocolSession(
   definition: McpProtocolDefinition,
 ): McpProtocolSession {
   const spec = validate(definition);
-  // Long-lived extension requests currently have routing support on stdio only.
-  if (!connection.definition.command)
-    throw new Error("Protocol extensions currently support stdio servers only");
   if (owner.aborted || connection.status !== "connected")
     throw new Error("MCP connection is unavailable");
   const router = routerFor(connection);
@@ -249,6 +287,39 @@ export function createProtocolSession(
   router.disconnect.add(disconnected);
   return {
     signal: controller.signal,
+    watchNotifications(methods, onNotification) {
+      if (
+        !Array.isArray(methods) ||
+        methods.length === 0 ||
+        methods.length > 64
+      )
+        throw new Error("Declared notification methods are required");
+      for (const method of methods) ensure(method, spec.notifications);
+      if (typeof onNotification !== "function")
+        throw new Error("A protocol notification handler is required");
+      const release = pin(connection);
+      let settle!: (end: McpProtocolEnd) => void;
+      const closed = new Promise<McpProtocolEnd>((resolve) => {
+        settle = resolve;
+      });
+      let finished = false;
+      const finish = (end: McpProtocolEnd) => {
+        if (finished) return;
+        finished = true;
+        router.watchers.delete(entry);
+        active.delete(finish);
+        release();
+        settle(end);
+      };
+      const entry: Entry = {
+        methods: new Set(methods),
+        notify: onNotification,
+        finish,
+      };
+      router.watchers.add(entry);
+      active.add(finish);
+      return { closed, close: () => finish({ reason: "cancelled" }) };
+    },
     async request(method, params = {}, signal) {
       ensure(method, spec.requests);
       const copy = paramsCopy(params);
@@ -280,16 +351,21 @@ export function createProtocolSession(
         settle = resolve;
       });
       let finished = false;
+      let dispatched = false;
+      const requestController = new AbortController();
       let cancellation: Promise<void> | undefined;
       const cancelWire = () =>
-        (cancellation ??= router.closed
-          ? Promise.resolve()
-          : connection.client
-              .notification({
-                method: "notifications/cancelled",
-                params: { requestId: id },
-              })
-              .catch(() => {}));
+        (cancellation ??=
+          router.closed ||
+          !dispatched ||
+          connection.transport.hasPerRequestStream
+            ? Promise.resolve()
+            : connection.client
+                .notification({
+                  method: "notifications/cancelled",
+                  params: { requestId: id },
+                })
+                .catch(() => {}));
       const finish = (end: McpProtocolEnd) => {
         if (finished) return;
         finished = true;
@@ -297,6 +373,7 @@ export function createProtocolSession(
         active.delete(finish);
         release();
         settle(end);
+        requestController.abort();
         if (end.reason !== "ended") void cancelWire();
       };
       router.entries.set(id, {
@@ -312,12 +389,23 @@ export function createProtocolSession(
         if (connection.client.getProtocolEra() === "modern" && !envelope)
           throw new Error("MCP client request metadata is unavailable");
         const meta = envelope ? { _meta: envelope } : {};
-        await connection.transport.send({
-          jsonrpc: "2.0",
-          id,
-          method,
-          params: { ...copy, ...meta },
-        });
+        dispatched = true;
+        await connection.transport.send(
+          {
+            jsonrpc: "2.0",
+            id,
+            method,
+            params: { ...copy, ...meta },
+          },
+          {
+            requestSignal: requestController.signal,
+            onRequestStreamEnd: () =>
+              finish({
+                reason: "disconnected",
+                error: "MCP request stream ended without a final response",
+              }),
+          },
+        );
       });
       void sent.catch((error) =>
         finish({ reason: "error", error: message(error) }),
