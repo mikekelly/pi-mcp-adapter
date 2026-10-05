@@ -4,6 +4,7 @@ import {
   registerProtocolBridge,
   registerMcpProtocol,
 } from "../runtime-protocol.ts";
+import { wrapTransportWithMcpTrace } from "../mcp-trace.ts";
 const spec = {
   namespace: "demo",
   requests: ["demo/list"],
@@ -416,3 +417,31 @@ it.each(["observer", "session", "owner"])(
     expect(f.connection.activeProtocolOperations).toBe(0);
   },
 );
+it("records each inbound frame once on a traced transport", async () => {
+  const f = fixture(),
+    sdk = f.transport.onmessage,
+    traced: string[] = [];
+  wrapTransportWithMcpTrace(f.transport as any, "demo", "stdio", {
+    record: (event) => traced.push(event.direction),
+  });
+  const session = f.session();
+  const received = vi.fn();
+  const stream = session.openStream("demo/stream", {}, received);
+  await stream.sent;
+  traced.length = 0;
+  f.transport.onmessage({ jsonrpc: "2.0", id: 1, result: {} });
+  expect(traced).toEqual(["inbound"]);
+  expect(sdk).toHaveBeenCalledOnce();
+  f.transport.onmessage({
+    jsonrpc: "2.0",
+    method: "notifications/demo/event",
+    params: { _meta: { "io.modelcontextprotocol/subscriptionId": stream.id } },
+  });
+  expect(traced).toEqual(["inbound", "inbound"]);
+  expect(received).toHaveBeenCalledOnce();
+  expect(sdk).toHaveBeenCalledOnce();
+  session.close();
+  f.transport.onmessage({ jsonrpc: "2.0", id: 2, result: {} });
+  expect(traced).toEqual(["inbound", "inbound", "inbound"]);
+  expect(sdk).toHaveBeenCalledTimes(2);
+});

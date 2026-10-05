@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { Transport } from "@modelcontextprotocol/client";
 import type { ServerConnection } from "./server-manager.ts";
+import { untracedMessageHandler } from "./mcp-trace.ts";
 
 export const MCP_PROTOCOL_EVENT = "pi-mcp-adapter:protocol:v1";
 export interface McpProtocolDefinition {
@@ -143,7 +144,8 @@ function routerFor(connection: ServerConnection): Router {
     watchers: new Set(),
   };
   routers.set(transport, router);
-  const previousMessage = transport.onmessage;
+  // The router is the outermost handler, so tracing wraps it once; forward to the raw SDK handler.
+  const previousMessage = untracedMessageHandler(transport);
   const previousClose = transport.onclose;
   transport.onmessage = (frame, extra) => {
     const raw = frame as any;
