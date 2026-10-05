@@ -190,9 +190,20 @@ function appendStderrTail(tail: Buffer, chunk: Buffer | string): Buffer {
     : combined;
 }
 
+// Use the SDK's own envelope builder so extension streams match ordinary requests,
+// including capability changes and negotiated protocol versions.
+class AdapterClient extends Client {
+  requestMetadata(): Readonly<Record<string, unknown>> | undefined {
+    return this._outboundMetaEnvelope();
+  }
+}
+const clientMetadata = new WeakMap<Client, () => Readonly<Record<string, unknown>> | undefined>();
+
 export interface ServerConnection {
   client: Client;
   transport: Transport;
+  /** Internal SDK envelope accessor; never exposed through the protocol extension API. */
+  requestMetadata?: () => Readonly<Record<string, unknown>> | undefined;
   definition: ServerDefinition;
   tools: McpTool[];
   /** Cache hints from the server's aggregated tools/list result. */
@@ -1239,6 +1250,7 @@ export class McpServerManager {
       const connection: ServerConnection = {
         client,
         transport,
+        requestMetadata: () => clientMetadata.get(client)?.(),
         definition,
         tools: [],
         toolsRevision: 0,
@@ -1460,7 +1472,7 @@ export class McpServerManager {
     const capabilities = this.buildClientCapabilities();
     const versionNegotiation = resolveVersionNegotiation(definition);
     let client: Client;
-    client = new Client(
+    client = new AdapterClient(
       { name: `pi-mcp-${serverName}`, version: "1.0.0" },
       {
         jsonSchemaValidator: createJsonSchemaValidator(),
@@ -1485,6 +1497,7 @@ export class McpServerManager {
         },
       },
     );
+    clientMetadata.set(client, () => (client as AdapterClient).requestMetadata());
     if (this.samplingConfig) {
       registerSamplingHandler(client, { ...this.samplingConfig, serverName });
     }

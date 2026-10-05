@@ -278,3 +278,31 @@ it("does not send a stream cancelled before dispatch and never exposes uncorrela
   expect(previous).toHaveBeenCalledOnce();
   session.close();
 });
+
+it.each([{ url: "https://example.test/mcp" }, { socket: "/tmp/mcp.sock" }])(
+  "rejects unsupported transport before installing a router or sending traffic: %j",
+  (definition) => {
+    const f = fixture(),
+      originalMessage = f.transport.onmessage,
+      originalClose = f.transport.onclose;
+    f.connection.definition = definition;
+    expect(f.session).toThrow("stdio servers only");
+    expect(f.transport.onmessage).toBe(originalMessage);
+    expect(f.transport.onclose).toBe(originalClose);
+    expect(f.client.request).not.toHaveBeenCalled();
+    expect(f.transport.send).not.toHaveBeenCalled();
+    expect(f.connection.activeProtocolOperations ?? 0).toBe(0);
+  },
+);
+
+it("fails closed if a modern connection cannot supply its SDK metadata", async () => {
+  const f = fixture();
+  f.client.getProtocolEra = () => "modern";
+  const session = f.session();
+  const stream = session.openStream("demo/stream", {}, () => {});
+  await expect(stream.sent).rejects.toThrow("metadata is unavailable");
+  expect(f.transport.send).not.toHaveBeenCalled();
+  expect((await stream.closed).reason).toBe("error");
+  expect(f.connection.activeProtocolOperations).toBe(0);
+  session.close();
+});

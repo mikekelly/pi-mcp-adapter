@@ -308,20 +308,10 @@ export function createProtocolSession(
       // Defer sending until the caller has received the handle and installed its state.
       const sent = Promise.resolve().then(async () => {
         if (finished) return;
-        const meta =
-          connection.client.getProtocolEra() === "modern"
-            ? {
-                _meta: {
-                  "io.modelcontextprotocol/protocolVersion":
-                    connection.client.getNegotiatedProtocolVersion(),
-                  "io.modelcontextprotocol/clientInfo": {
-                    name: "pi-mcp-adapter",
-                    version: "5.0.0",
-                  },
-                  "io.modelcontextprotocol/clientCapabilities": {},
-                },
-              }
-            : {};
+        const envelope = connection.requestMetadata?.();
+        if (connection.client.getProtocolEra() === "modern" && !envelope)
+          throw new Error("MCP client request metadata is unavailable");
+        const meta = envelope ? { _meta: envelope } : {};
         await connection.transport.send({
           jsonrpc: "2.0",
           id,
