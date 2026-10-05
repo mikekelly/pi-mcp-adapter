@@ -25,6 +25,8 @@ export interface ServerConnection {
     instructions?: string;
     lastUsedAt: number;
     inFlight: number;
+    /** Active protocol requests/streams on this transport; never inherited by reconnects. */
+    activeProtocolOperations?: number;
     status: "connected" | "closed" | "needs-auth";
     /** Catalog subscription health, tracked independently from transport health. */
     listenState: McpListenState;

@@ -1,4 +1,6 @@
-> **Mike Kelly's MCP Events companion fork.** Published as `@realmikekelly/pi-mcp-adapter`. Based on [Nico Bailon's pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter), with a small [connection-lease hook](docs/connection-leases.md) for trusted extensions. Original authorship and MIT license are retained.
+> **Mike Kelly's MCP Events companion fork.** Published as `@realmikekelly/pi-mcp-adapter`. Based on [Nico Bailon's pi-mcp-adapter](https://github.com/nicobailon/pi-mcp-adapter), with a [mediated protocol-extension API](docs/protocol-extensions.md) for companion extensions. Original authorship and MIT license are retained.
+>
+> **5.1.0 is being prepared for release.** It replaces the raw connection-lease API and must be paired with Pi MCP Events 0.2.0+. Until npm releases are available, follow the companion README’s source-install instructions.
 >
 > To use [Pi MCP Events](https://github.com/mikekelly/pi-mcp-events), replace the upstream adapter registration and install the companion:
 >
@@ -8,7 +10,7 @@
 > pi install npm:@realmikekelly/pi-mcp-events
 > ```
 >
-> Skip the remove command if the upstream package is not installed. Keep only one adapter enabled. Existing MCP server configuration stays the same. Restart Pi after installation. This fork is needed until the connection hook is available upstream.
+> Skip the remove command if the upstream package is not installed. Keep only one adapter enabled. Existing MCP server configuration stays the same. Restart Pi after installation. This fork is needed until the protocol-extension API is available upstream.
 
 <p>
   <img src="banner.png" alt="pi-mcp-adapter" width="1100">

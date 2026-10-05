@@ -1,7 +1,7 @@
 {
   "name": "@realmikekelly/pi-mcp-adapter",
-  "version": "5.0.1",
-  "description": "Fork of pi-mcp-adapter with a shared-connection hook for companion extensions",
+  "version": "5.1.0",
+  "description": "Fork of pi-mcp-adapter with mediated protocol extensions for MCP Events",
   "type": "module",
   "types": "./index.ts",
   "exports": {
@@ -87,7 +87,7 @@
     "utils.ts",
     "abort.ts",
     "runtime-owner.ts",
-    "runtime-connection.ts",
+    "runtime-protocol.ts",
     "tool-metadata.ts",
     "ts-shape.ts",
     "output-shape.ts",
