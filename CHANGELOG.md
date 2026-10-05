@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `/mcp-adapter setup` can add Tavily Search, an opt-in preset for web search and page extraction through Tavily's [keyless access](https://docs.tavily.com/documentation/keyless), with no account, API key, or sign-in. Usage is rate-limited. `tavily_search` and `tavily_extract` are direct tools; Tavily's other tools need an API key and stay behind the proxy. Thanks to [@lakshyaag-tavily](https://github.com/lakshyaag-tavily) for [PR #800](https://github.com/nicobailon/pi-mcp-adapter/pull/800).
 - Server entries accept `"openUi": false` to stop that server's MCP App UIs from opening; its tools still run and return inline results. Thanks to [@tekumara](https://github.com/tekumara) for [#803](https://github.com/nicobailon/pi-mcp-adapter/issues/803).
+- Companion Pi extensions can add MCP protocol capabilities beyond tool calls, such as the draft MCP Events extension, through `registerMcpProtocol`. A companion declares its own request, stream, and notification methods and uses them over the adapter's configured servers, auth, trust and approval checks, and connection lifetime, without getting the raw SDK client or transport. Registering starts no connections and adds nothing to the model's context. See [protocol extensions](docs/protocol-extensions.md). Thanks to [@mikekelly](https://github.com/mikekelly) for [PR #807](https://github.com/nicobailon/pi-mcp-adapter/pull/807).
 
 ### Changed
 
