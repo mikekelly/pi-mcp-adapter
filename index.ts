@@ -1,5 +1,5 @@
-import { registerConnectionBridge, leaseConnection } from "./runtime-connection.ts";
-export { acquireMcpConnection, MCP_CONNECTION_EVENT, type McpConnectionLease } from "./runtime-connection.ts";
+import { registerProtocolBridge } from "./runtime-protocol.ts";
+export { registerMcpProtocol, MCP_PROTOCOL_EVENT, type McpProtocolDefinition, type McpProtocol, type McpProtocolSession, type McpProtocolStream, type McpProtocolEnd } from "./runtime-protocol.ts";
 import { withFileMutationQueue, type AgentToolResult, type AgentToolUpdateCallback, type ExtensionAPI, type ExtensionContext, type RegisteredMcpServer, type ToolInfo } from "@earendil-works/pi-coding-agent";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
@@ -994,7 +994,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     })();
   });
 
-  registerConnectionBridge(pi, async name => {
+  registerProtocolBridge(pi, async name => {
     if (!sessionCtx) throw new Error("MCP connections require an active Pi session");
     const target = await ensureSessionRuntime(sessionCtx);
     if (!target) throw new Error("MCP is not initialized");
@@ -1011,7 +1011,7 @@ function installMcpAdapter(pi: ExtensionAPI, options: McpAdapterOptions) {
     }
     const connection = target.manager.getConnection(name);
     if (!connection || connection.status !== "connected") throw new Error("MCP connection is unavailable");
-    return leaseConnection(connection, target.owner.signal);
+    return { connection, signal: target.owner.signal };
   });
 
   // Compares registrations with the active session's config, so it runs only once state exists.

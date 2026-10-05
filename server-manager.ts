@@ -208,8 +208,8 @@ export interface ServerConnection {
   instructions?: string;
   lastUsedAt: number;
   inFlight: number;
-  /** Trusted extension leases on this transport; never inherited by reconnects. */
-  activeLeases?: number;
+  /** Active protocol requests/streams on this transport; never inherited by reconnects. */
+  activeProtocolOperations?: number;
   status: "connected" | "closed" | "needs-auth";
   /** Catalog subscription health, tracked independently from transport health. */
   listenState: McpListenState;
@@ -2160,7 +2160,7 @@ export class McpServerManager {
   isIdle(name: string, timeoutMs: number): boolean {
     const connection = this.connections.get(name);
     if (!connection || connection.status !== "connected") return false;
-    if (connection.inFlight > 0 || (connection.activeLeases ?? 0) > 0) return false;
+    if (connection.inFlight > 0 || (connection.activeProtocolOperations ?? 0) > 0) return false;
     return (Date.now() - connection.lastUsedAt) > timeoutMs;
   }
 }

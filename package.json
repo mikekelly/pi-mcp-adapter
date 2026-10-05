@@ -87,7 +87,7 @@
     "utils.ts",
     "abort.ts",
     "runtime-owner.ts",
-    "runtime-connection.ts",
+    "runtime-protocol.ts",
     "tool-metadata.ts",
     "ts-shape.ts",
     "output-shape.ts",

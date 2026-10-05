@@ -1,3 +1,13 @@
+import { registerMcpProtocol } from "../runtime-protocol.ts";
+const testProtocols = new WeakMap<object, ReturnType<typeof registerMcpProtocol>>();
+const testProtocolSession = (pi: any, name: string) => {
+  let protocol = testProtocols.get(pi);
+  if (!protocol) {
+    protocol = registerMcpProtocol(pi, { namespace: "demo", requests: ["demo/list"], streams: ["demo/stream"], notifications: ["notifications/demo/event"] });
+    testProtocols.set(pi, protocol);
+  }
+  return protocol.connect(name);
+};
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -118,16 +128,16 @@ describe("load-time initialization with project server overrides", () => {
     await pi.handlers.get("session_shutdown")?.({ type: "session_shutdown" });
   });
 
-  it.each([false, true])("connection leases do not bypass project approval (trusted=%s)", async trusted => {
+  it.each([false, true])("protocol extensions do not bypass project approval (trusted=%s)", async trusted => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
-    const { default: mcpAdapter, acquireMcpConnection } = await import("../index.ts");
+    const { default: mcpAdapter } = await import("../index.ts");
     const pi = createPi();
     mcpAdapter(pi.api);
     await pi.handlers.get("session_start")?.({ type: "session_start", reason: "startup" }, {
       cwd, hasUI: false, mode: "rpc", isProjectTrusted: () => trusted, modelRegistry: {},
     });
-    await expect(acquireMcpConnection(pi.api, "equibles")).rejects.toThrow("not configured or enabled");
+    await expect(testProtocolSession(pi.api, "equibles")).rejects.toThrow("not configured or enabled");
     expect(connect.mock.calls.map(call => call[0])).not.toContain("equibles");
     await pi.handlers.get("session_shutdown")?.({ type: "session_shutdown" });
   });

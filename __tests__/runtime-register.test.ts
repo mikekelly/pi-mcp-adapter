@@ -1,3 +1,13 @@
+import { registerMcpProtocol } from "../runtime-protocol.ts";
+const testProtocols = new WeakMap<object, ReturnType<typeof registerMcpProtocol>>();
+const testProtocolSession = (pi: any, name: string) => {
+  let protocol = testProtocols.get(pi);
+  if (!protocol) {
+    protocol = registerMcpProtocol(pi, { namespace: "demo", requests: ["demo/list"], streams: ["demo/stream"], notifications: ["notifications/demo/event"] });
+    testProtocols.set(pi, protocol);
+  }
+  return protocol.connect(name);
+};
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -487,39 +497,40 @@ describe("runtime MCP server registration", () => {
     } };
   }
 
-  it("leases through distinct extension wrappers without adding model tools or eager connections", async () => {
+  it("connects through distinct extension wrappers without adding model tools or eager connections", async () => {
     const f = await connectionFixture();
-    await expect(f.module.acquireMcpConnection(f.consumer.api, "demo")).rejects.toThrow("active Pi session");
+    await expect(testProtocolSession(f.consumer.api, "demo")).rejects.toThrow("active Pi session");
     expect(mocks.lazyConnect).not.toHaveBeenCalled();
     await f.start();
     const tools = f.adapter.api.registerTool.mock.calls.length;
-    const first = await f.module.acquireMcpConnection(f.consumer.api, "demo");
-    const second = await f.module.acquireMcpConnection(f.consumer.api, "demo");
-    expect(first.client).toBe(f.connection.client);
-    expect(second.transport).toBe(first.transport);
+    const first = await testProtocolSession(f.consumer.api, "demo");
+    const second = await testProtocolSession(f.consumer.api, "demo");
+    expect(first).not.toHaveProperty("client");
+    expect(first).not.toHaveProperty("transport");
+    expect(second).not.toBe(first);
     expect(mocks.lazyConnect).toHaveBeenCalledWith(f.state, "demo", f.state.owner.signal);
     expect(f.adapter.api.registerTool.mock.calls.length).toBe(tools);
-    first.release();
+    first.close();
     expect(second.signal.aborted).toBe(false);
     await f.adapter.handlers.get("session_shutdown")?.({});
     expect(second.signal.aborted).toBe(true);
-    await expect(f.module.acquireMcpConnection(f.consumer.api, "demo")).rejects.toThrow("active Pi session");
+    await expect(testProtocolSession(f.consumer.api, "demo")).rejects.toThrow("active Pi session");
   });
 
   it.each(["missing", "disabled", "toString", "__proto__"])("rejects unavailable configured server %s before connecting", async name => {
     const f = await connectionFixture();
     await f.start();
-    await expect(f.module.acquireMcpConnection(f.consumer.api, name)).rejects.toThrow("not configured or enabled");
+    await expect(testProtocolSession(f.consumer.api, name)).rejects.toThrow("not configured or enabled");
     expect(mocks.lazyConnect).not.toHaveBeenCalled();
     await f.adapter.handlers.get("session_shutdown")?.({});
   });
 
-  it("rejects authentication/connect failures without returning a lease", async () => {
+  it("rejects authentication/connect failures without returning a session", async () => {
     const f = await connectionFixture();
     await f.start();
     mocks.lazyConnect.mockResolvedValue(false);
-    await expect(f.module.acquireMcpConnection(f.consumer.api, "demo")).rejects.toThrow("could not connect");
-    expect(f.connection).not.toHaveProperty("activeLeases");
+    await expect(testProtocolSession(f.consumer.api, "demo")).rejects.toThrow("could not connect");
+    expect(f.connection).not.toHaveProperty("activeProtocolOperations");
     await f.adapter.handlers.get("session_shutdown")?.({});
   });
 
@@ -528,7 +539,7 @@ describe("runtime MCP server registration", () => {
     await f.start();
     let resolve!: (value: boolean) => void;
     mocks.lazyConnect.mockImplementation(() => new Promise<boolean>(r => { resolve = r; }));
-    const pending = f.module.acquireMcpConnection(f.consumer.api, "demo");
+    const pending = testProtocolSession(f.consumer.api, "demo");
     const rejected = expect(pending).rejects.toThrow();
     await vi.waitFor(() => expect(mocks.lazyConnect).toHaveBeenCalled());
     if (mode === "shutdown") await f.adapter.handlers.get("session_shutdown")?.({});
@@ -536,7 +547,7 @@ describe("runtime MCP server registration", () => {
     else f.state.config.mcpServers.demo = { command: "replacement" };
     resolve(true);
     await rejected;
-    expect(f.connection).not.toHaveProperty("activeLeases");
+    expect(f.connection).not.toHaveProperty("activeProtocolOperations");
     await f.adapter.handlers.get("session_shutdown")?.({});
   });
 
@@ -546,9 +557,9 @@ describe("runtime MCP server registration", () => {
     await first.start();
     const second = await connectionFixture();
     await second.start();
-    const a = await first.module.acquireMcpConnection(first.consumer.api, "demo");
-    const b = await second.module.acquireMcpConnection(second.consumer.api, "demo");
-    expect(a.client).not.toBe(b.client);
+    const a = await testProtocolSession(first.consumer.api, "demo");
+    const b = await testProtocolSession(second.consumer.api, "demo");
+    expect(a).not.toBe(b);
     await first.adapter.handlers.get("session_shutdown")?.({});
     expect(a.signal.aborted).toBe(true);
     expect(b.signal.aborted).toBe(false);

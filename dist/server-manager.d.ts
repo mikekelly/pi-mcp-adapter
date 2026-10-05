@@ -25,8 +25,8 @@ export interface ServerConnection {
     instructions?: string;
     lastUsedAt: number;
     inFlight: number;
-    /** Trusted extension leases on this transport; never inherited by reconnects. */
-    activeLeases?: number;
+    /** Active protocol requests/streams on this transport; never inherited by reconnects. */
+    activeProtocolOperations?: number;
     status: "connected" | "closed" | "needs-auth";
     /** Catalog subscription health, tracked independently from transport health. */
     listenState: McpListenState;

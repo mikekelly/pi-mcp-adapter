@@ -1811,7 +1811,7 @@ export class McpServerManager {
         const connection = this.connections.get(name);
         if (!connection || connection.status !== "connected")
             return false;
-        if (connection.inFlight > 0 || (connection.activeLeases ?? 0) > 0)
+        if (connection.inFlight > 0 || (connection.activeProtocolOperations ?? 0) > 0)
             return false;
         return (Date.now() - connection.lastUsedAt) > timeoutMs;
     }

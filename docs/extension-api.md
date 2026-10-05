@@ -2,7 +2,7 @@
 
 For extension authors, plugin authors, and apps that embed Pi: loading servers from plugins and packages, registering or calling servers at runtime, SDK configuration, host-managed embedding, and status events.
 
-For protocol capabilities beyond tool calls, trusted extensions can [lease the adapter’s existing connection](connection-leases.md). Leases preserve adapter configuration, authentication and session ownership without starting a second server.
+For protocol capabilities beyond tool calls, trusted extensions can [register protocol methods and stream handlers](protocol-extensions.md). The adapter mediates their requests, routes correlated notifications, and manages connection lifetime without exposing its SDK client or transport.
 
 ## Agent Plugins
 
